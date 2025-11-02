@@ -240,7 +240,7 @@ button.small { padding: 6px 8px; font-size: 12px; border-radius: 8px; }
   max-width: 70%; padding: 10px 12px; border-radius: 14px; margin: 4px 0;
   border: 1px solid var(--border);
 }
-.bubble.you { background: #f6f8ff; justify-self: start; }
+.bubble.you { background: #f9fafb; justify-self: start; }
 .bubble.them { background: #f9fafb; justify-self: end; }
 .compose { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
 .compose input {
