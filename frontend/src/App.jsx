@@ -1,7 +1,5 @@
-// src/App.jsx
 import { useState, useRef, useEffect } from "react";
 
-/* click-outside helper for the dropdown */
 function useOnClickOutside(ref, handler) {
   useEffect(() => {
     function onClick(e) {
@@ -13,10 +11,9 @@ function useOnClickOutside(ref, handler) {
   }, [ref, handler]);
 }
 
-/* --------- Dashboard (after login) --------- */
 function Dashboard({ userEmail, onSignOut }) {
   const [open, setOpen] = useState(false);
-  const [active, setActive] = useState("Home"); // Home | Calendar | Groups | Notifications | Messages
+  const [active, setActive] = useState("Home"); 
   const menuRef = useRef(null);
   useOnClickOutside(menuRef, () => setOpen(false));
 
@@ -25,7 +22,6 @@ function Dashboard({ userEmail, onSignOut }) {
     setOpen(false);
   }
 
-  // ⬇️ REPLACE your current return(...) with everything below
   return (
     <section className="content">
       <div className="container">
@@ -83,7 +79,6 @@ function Dashboard({ userEmail, onSignOut }) {
 }
 
 
-/* ----- Simple section components (placeholders you can expand later) ----- */
 function HomeCards() {
   return (
     <div className="dash-cards">
@@ -190,12 +185,10 @@ function MessagesView() {
 
 
 export default function App() {
-  // ---- your existing sign-in state (unchanged UI) ----
   const [email, setEmail] = useState("");
   const [pwd, setPwd] = useState("");
   const [showPwd, setShowPwd] = useState(false);
 
-  // ---- new: auth gate ----
   const [authed, setAuthed] = useState(false);
 
   const isWFU = /@wfu\.edu$/i.test(email.trim());
@@ -206,7 +199,7 @@ export default function App() {
     if (!canSubmit) return;
     console.log("Sign in with:", { email, pwd });
     alert("Signed in (demo). Replace with real auth next.");
-    setAuthed(true); // show dashboard
+    setAuthed(true); 
   }
 
   function handleSignOut() {
@@ -236,7 +229,6 @@ export default function App() {
 
 
       {!authed ? (
-        // ------- your original sign-in form (unchanged) -------
         <section className="content">
           <form className="card form" onSubmit={onSubmit} noValidate>
             <div className="disclaimer">
