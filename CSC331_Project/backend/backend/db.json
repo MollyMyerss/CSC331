@@ -1,0 +1,19 @@
+{
+  "users": [
+    {
+      "email": "woodam22@wfu.edu",
+      "classes": [],
+      "availability": []
+    },
+    {
+      "email": "example@wfu.edu",
+      "classes": [],
+      "availability": []
+    },
+    {
+      "email": "example@wfu.edu",
+      "classes": [],
+      "availability": []
+    }
+  ]
+}
