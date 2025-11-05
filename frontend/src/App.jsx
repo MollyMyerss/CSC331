@@ -193,14 +193,60 @@ export default function App() {
 
   const isWFU = /@wfu\.edu$/i.test(email.trim());
   const canSubmit = isWFU && pwd.length >= 6;
+  const [classes, setClasses] = useState("");
+  
+  const [availability, setAvailability] = useState("");
+  const [isSignUp, setIsSignUp] = useState(false);
 
-  function onSubmit(e) {
+  async function onSubmit(e) {
     e.preventDefault();
-    if (!canSubmit) return;
-    console.log("Sign in with:", { email, pwd });
-    alert("Signed in (demo). Replace with real auth next.");
-    setAuthed(true); 
-  }
+
+    if (isSignUp) {
+      // Create new user
+      const userData = {
+        email,
+        password: pwd,
+        classes: classes.split(",").map(c => c.trim()),
+        availability: availability.split(",").map(slot => {
+          const [day, timeRange] = slot.trim().split(" ");
+          const [start, end] = timeRange.split("-");
+          return { day, start, end };
+        }),
+      };
+
+      const res = await fetch("http://localhost:5000/api/users", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(userData),
+      });
+
+      if (res.ok) {
+        alert("Account created! You can now sign in.");
+        setIsSignUp(false);
+      } else {
+        const data = await res.json();
+        alert(data.error || "Error creating account");
+      }
+
+    } else {
+      // Log in existing user
+      const res = await fetch("http://localhost:5000/api/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password: pwd }),
+      });
+
+      const data = await res.json();
+
+      if (res.ok) {
+        alert("Welcome back!");
+        setAuthed(true);
+      } else {
+        alert(data.error || "Login failed");
+      }
+    }
+}
+
 
   function handleSignOut() {
     setAuthed(false);
@@ -231,64 +277,77 @@ export default function App() {
       {!authed ? (
         <section className="content">
           <form className="card form" onSubmit={onSubmit} noValidate>
-            <div className="disclaimer">
-              <strong>Required: WFU email</strong>
-              <span className="muted"> (example@wfu.edu)</span>
-            </div>
+            <h2>{isSignUp ? "Create Account" : "Sign In"}</h2>
 
             <label className="field">
               <span className="label">Email</span>
               <input
                 type="email"
-                inputMode="email"
-                placeholder=""
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
-                className={!email ? "" : isWFU ? "ok" : "err"}
               />
-              {!email ? null : isWFU ? (
-                <span className="help ok-text">WFU email looks good.</span>
-              ) : (
-                <span className="help err-text">Use your @wfu.edu address.</span>
-              )}
             </label>
 
             <label className="field">
               <span className="label">Password</span>
-              <div className="password-row">
-                <input
-                  type={showPwd ? "text" : "password"}
-                  placeholder=""
-                  value={pwd}
-                  onChange={(e) => setPwd(e.target.value)}
-                  minLength={6}
-                  required
-                />
-                <button
-                  type="button"
-                  className="ghost"
-                  onClick={() => setShowPwd((v) => !v)}
-                  aria-pressed={showPwd}
-                >
-                  {showPwd ? "Hide" : "Show"}
-                </button>
-              </div>
-              {pwd && pwd.length < 6 ? (
-                <span className="help err-text">At least 6 characters.</span>
-              ) : null}
+              <input
+                type={showPwd ? "text" : "password"}
+                value={pwd}
+                onChange={(e) => setPwd(e.target.value)}
+                required
+              />
+              <button
+                type="button"
+                className="ghost small"
+                onClick={() => setShowPwd((v) => !v)}
+              >
+                {showPwd ? "Hide" : "Show"}
+              </button>
             </label>
 
-            <button className="primary" type="submit" disabled={!canSubmit}>
-              Continue
+            {/* If signing up, show extra fields */}
+            {isSignUp && (
+              <>
+                <label className="field">
+                  <span className="label">Classes (comma-separated)</span>
+                  <input
+                    type="text"
+                    value={classes}
+                    onChange={(e) => setClasses(e.target.value)}
+                    placeholder="e.g., MTH121, BEM329"
+                  />
+                </label>
+
+                <label className="field">
+                  <span className="label">Availability (e.g., Mon 15:00-16:00)</span>
+                  <input
+                    type="text"
+                    value={availability}
+                    onChange={(e) => setAvailability(e.target.value)}
+                    placeholder="e.g., Mon 15:00-16:00, Wed 18:00-19:00"
+                  />
+                </label>
+              </>
+            )}
+
+            <button className="primary" type="submit">
+              {isSignUp ? "Sign Up" : "Sign In"}
             </button>
 
             <p className="tiny muted">
-              By continuing, you agree to our community guidelines. You must use a
-              valid Wake Forest email to sign in.
+              {isSignUp ? "Already have an account?" : "New user?"}{" "}
+              <button
+                type="button"
+                className="link"
+                onClick={() => setIsSignUp(!isSignUp)}
+              >
+                {isSignUp ? "Sign In" : "Create Account"}
+              </button>
             </p>
           </form>
         </section>
+
       ) : (
         <Dashboard userEmail={email} onSignOut={handleSignOut} />
       )}
