@@ -1,5 +1,32 @@
+// src/App.jsx (combined)
+
 import { useState, useRef, useEffect } from "react";
 
+const API_BASE = "http://localhost:5050";
+
+const LS = {
+  AUTH: "sb.auth.v1",
+  TAB: "sb.tab.v1",
+  PROFILE: "sb.profile.v1",
+  ONBOARDED: "sb.onboarded.v1",
+};
+
+const load = (k, fallback) => {
+  try {
+    const v = localStorage.getItem(k);
+    return v ? JSON.parse(v) : fallback;
+  } catch {
+    return fallback;
+  }
+};
+
+const save = (k, v) => {
+  try {
+    localStorage.setItem(k, JSON.stringify(v));
+  } catch {}
+};
+
+// shared hook
 function useOnClickOutside(ref, handler) {
   useEffect(() => {
     function onClick(e) {
@@ -11,9 +38,15 @@ function useOnClickOutside(ref, handler) {
   }, [ref, handler]);
 }
 
-function Dashboard({ userEmail, onSignOut }) {
+// =================== DASHBOARD ===================
+function Dashboard({ userEmail, onSignOut, profile, setProfile }) {
   const [open, setOpen] = useState(false);
-  const [active, setActive] = useState("Home"); 
+  const [active, setActive] = useState(load(LS.TAB, "Home"));
+
+  useEffect(() => {
+    save(LS.TAB, active);
+  }, [active]);
+
   const menuRef = useRef(null);
   useOnClickOutside(menuRef, () => setOpen(false));
 
@@ -28,7 +61,9 @@ function Dashboard({ userEmail, onSignOut }) {
         <div className="dash">
           <div className="dash-top">
             <div>
-              <h2 style={{ margin: 0 }}>Welcome to your dashboard!</h2>
+              <h2 style={{ margin: 0 }}>
+                Welcome{profile?.name ? `, ${profile.name}` : ""} to your dashboard!
+              </h2>
               <p className="muted" style={{ marginTop: 6 }}>
                 Use the menu to jump to sections.
               </p>
@@ -66,7 +101,7 @@ function Dashboard({ userEmail, onSignOut }) {
             </div>
           </div>
 
-          {/* ---- Section router ---- */}
+          {/* section router */}
           {active === "Home" && <HomeCards />}
           {active === "Calendar" && <CalendarView />}
           {active === "Groups" && <GroupsView />}
@@ -78,7 +113,7 @@ function Dashboard({ userEmail, onSignOut }) {
   );
 }
 
-
+// from both versions – kept
 function HomeCards() {
   return (
     <div className="dash-cards">
@@ -93,34 +128,270 @@ function HomeCards() {
       <div className="card">
         <h3>Today</h3>
         <p>No sessions yet. Create one or join a group.</p>
-        <p className="tiny muted">Tip: Use Groups → “Find group” to browse open study groups.</p>
+        <p className="tiny muted">
+          Tip: Use Groups → “Find group” to browse open study groups.
+        </p>
       </div>
       <div className="card">
         <h3>Messages</h3>
         <p>Nothing new. Say hi to your group!</p>
       </div>
+
+      {/* we also keep the CalendarConnect box from the 2nd file */}
+      <CalendarConnect />
     </div>
   );
 }
 
 function CalendarView() {
+  const [events, setEvents] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState("");
+
+  const [newTitle, setNewTitle] = useState("");
+  const [newDate, setNewDate] = useState("");
+  const [newStartTime, setNewStartTime] = useState("");
+  const [newEndTime, setNewEndTime] = useState("");
+
+  function getWeekStartingSunday() {
+    const today = new Date();
+    const dow = today.getDay();
+    const sunday = new Date(today);
+    sunday.setDate(today.getDate() - dow);
+
+    const days = [];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(sunday);
+      d.setDate(sunday.getDate() + i);
+      days.push(d);
+    }
+    return days;
+  }
+
+  function getEventDate(ev) {
+    if (ev.start?.date) return new Date(ev.start.date + "T00:00:00");
+    if (ev.start?.dateTime) return new Date(ev.start.dateTime);
+    return null;
+  }
+
+  async function loadEvents() {
+    setLoading(true);
+    setErr("");
+    try {
+      const res = await fetch(`${API_BASE}/api/calendar/events`, {
+        credentials: "include",
+      });
+
+      if (res.status === 401) {
+        window.location.href = `${API_BASE}/auth/google`;
+        return;
+      }
+
+      if (!res.ok) {
+        throw new Error(await res.text());
+      }
+
+      const data = await res.json();
+      setEvents(data);
+    } catch (e) {
+      console.error(e);
+      setErr("Failed to fetch calendar events");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    loadEvents();
+  }, []);
+
+  async function handleCreate(e) {
+    e.preventDefault();
+    setErr("");
+
+    if (!newTitle || !newDate || !newStartTime || !newEndTime) {
+      setErr("Please fill out title, date, start, and end.");
+      return;
+    }
+
+    const startISO = new Date(`${newDate}T${newStartTime}`).toISOString();
+    const endISO = new Date(`${newDate}T${newEndTime}`).toISOString();
+
+    try {
+      const res = await fetch(`${API_BASE}/api/calendar/events`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          summary: newTitle,
+          start: startISO,
+          end: endISO,
+        }),
+      });
+
+      if (res.status === 401) {
+        window.location.href = `${API_BASE}/auth/google`;
+        return;
+      }
+
+      if (!res.ok) {
+        throw new Error(await res.text());
+      }
+
+      setNewTitle("");
+      setNewDate("");
+      setNewStartTime("");
+      setNewEndTime("");
+
+      loadEvents();
+    } catch (e) {
+      console.error(e);
+      setErr("Failed to create event");
+    }
+  }
+
+  const week = getWeekStartingSunday();
+  const eventsByDay = week.map((day) => {
+    const dayStr = day.toISOString().slice(0, 10);
+    return events.filter((ev) => {
+      const evDate = getEventDate(ev);
+      if (!evDate) return false;
+      const evStr = evDate.toISOString().slice(0, 10);
+      return evStr === dayStr;
+    });
+  });
+
   return (
     <div className="section">
-      <h3>Calendar</h3>
-      <p className="muted">Your upcoming study sessions will appear here.</p>
-      <div className="calendar-grid">
-        {Array.from({ length: 7 * 5 }).map((_, i) => (
-          <div key={i} className="calendar-cell">{/* placeholder */}</div>
-        ))}
+      <h3>Weekly Calendar</h3>
+      <p className="muted">Pulled from Google Calendar</p>
+
+      <form
+        onSubmit={handleCreate}
+        style={{
+          display: "flex",
+          gap: "8px",
+          flexWrap: "wrap",
+          marginBottom: "12px",
+        }}
+      >
+        <input
+          type="text"
+          placeholder="Event title"
+          value={newTitle}
+          onChange={(e) => setNewTitle(e.target.value)}
+        />
+        <input
+          type="date"
+          value={newDate}
+          onChange={(e) => setNewDate(e.target.value)}
+        />
+        <input
+          type="time"
+          value={newStartTime}
+          onChange={(e) => setNewStartTime(e.target.value)}
+        />
+        <input
+          type="time"
+          value={newEndTime}
+          onChange={(e) => setNewEndTime(e.target.value)}
+        />
+        <button className="primary small" type="submit">
+          Create
+        </button>
+      </form>
+
+      <div className="row" style={{ marginBottom: 12 }}>
+        <button className="ghost small" onClick={loadEvents}>
+          Refresh
+        </button>
       </div>
-      <div className="row">
-        <button className="primary">Create Session</button>
-        <button className="ghost">Import from .ics</button>
+
+      {loading && <p className="muted">Loading…</p>}
+      {err && <p className="err-text tiny">{err}</p>}
+
+      {/* main 7-day grid */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(7, minmax(0, 1fr))",
+          gap: "12px",
+        }}
+      >
+        {week.map((day, idx) => {
+          const dayEvents = eventsByDay[idx];
+          const weekday = day.toLocaleDateString(undefined, { weekday: "short" });
+          const month = day.toLocaleDateString(undefined, { month: "short" });
+          const date = day.getDate();
+
+          return (
+            <div
+              key={day.toISOString()}
+              style={{
+                background: "white",
+                border: "1px solid #eee",
+                borderRadius: 10,
+                padding: 10,
+                minHeight: 120,
+                display: "flex",
+                flexDirection: "column",
+                gap: 6,
+              }}
+            >
+              <div style={{ fontSize: 12, color: "#777" }}>
+                {weekday} • {month} {date}
+              </div>
+
+              {dayEvents.length === 0 ? (
+                <div style={{ fontSize: 12, color: "#aaa", marginTop: 4 }}>
+                  No events
+                </div>
+              ) : (
+                dayEvents.map((ev) => {
+                  let timeLabel = "All day";
+                  if (ev.start?.dateTime) {
+                    const s = new Date(ev.start.dateTime);
+                    const e = ev.end?.dateTime ? new Date(ev.end.dateTime) : null;
+                    const sStr = s.toLocaleTimeString([], {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    });
+                    const eStr = e
+                      ? e.toLocaleTimeString([], {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })
+                      : "";
+                    timeLabel = eStr ? `${sStr} – ${eStr}` : sStr;
+                  }
+
+                  return (
+                    <div
+                      key={ev.id}
+                      style={{
+                        background: "#f3f4ff",
+                        borderRadius: 6,
+                        padding: "4px 6px",
+                      }}
+                    >
+                      <div style={{ fontSize: 12, fontWeight: 600 }}>
+                        {ev.summary || "(No title)"}
+                      </div>
+                      <div style={{ fontSize: 11, color: "#555" }}>{timeLabel}</div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          );
+        })}
       </div>
+
     </div>
   );
 }
 
+// from both
 function GroupsView() {
   return (
     <div className="section">
@@ -183,70 +454,253 @@ function MessagesView() {
   );
 }
 
+// =================== ONBOARDING ===================
+function OnboardingModal({ initial = { name: "", major: "", bio: "" }, onSave, onClose }) {
+  const [draft, setDraft] = useState(initial);
+  const [err, setErr] = useState("");
 
+  function save() {
+    if (!draft.name.trim() || !draft.major.trim()) {
+      setErr("Please enter your Name and Major.");
+      return;
+    }
+    onSave(draft);
+  }
+
+  return (
+    <div
+      className="modal-backdrop"
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(0,0,0,0.35)",
+        display: "grid",
+        placeItems: "center",
+        zIndex: 9999,
+      }}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="onboard-title"
+    >
+      <div className="card" style={{ maxWidth: 520, width: "90%", background: "var(--panel,#fff)" }}>
+        <h3 id="onboard-title">Set up your profile</h3>
+        <p className="muted" style={{ marginTop: -6 }}>
+          You’ll only do this once.
+        </p>
+
+        <label className="field">
+          <span className="label">Name</span>
+          <input
+            value={draft.name}
+            onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))}
+          />
+        </label>
+
+        <label className="field">
+          <span className="label">Major</span>
+          <input
+            value={draft.major}
+            onChange={(e) => setDraft((d) => ({ ...d, major: e.target.value }))}
+          />
+        </label>
+
+        <label className="field">
+          <span className="label">Bio (optional)</span>
+          <textarea
+            value={draft.bio}
+            onChange={(e) => setDraft((d) => ({ ...d, bio: e.target.value }))}
+          />
+        </label>
+
+        {err && (
+          <div className="tiny err-text" style={{ marginTop: 6 }}>
+            {err}
+          </div>
+        )}
+
+        <div className="row" style={{ marginTop: 12 }}>
+          <button className="primary" onClick={save}>
+            Save
+          </button>
+          <button className="ghost" onClick={onClose}>
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// =================== CALENDAR CONNECT CARD ===================
+function CalendarConnect() {
+  const [events, setEvents] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState("");
+
+  async function load() {
+    setLoading(true);
+    setErr("");
+    try {
+      const r = await fetch(`${API_BASE}/api/calendar/events`, {
+        credentials: "include",
+      });
+
+      if (r.status === 401) {
+        window.location.href = `${API_BASE}/auth/google`;
+        return;
+      }
+
+      if (!r.ok) {
+        const text = await r.text();
+        throw new Error(`API ${r.status}: ${text}`);
+      }
+
+      const data = await r.json();
+      setEvents(data);
+    } catch (e) {
+      setErr(String(e.message || e));
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="card">
+      <h3>Google Calendar</h3>
+      <div className="row">
+        <button className="primary small" onClick={load}>
+          {events ? "Refresh Events" : "Connect & Load Events"}
+        </button>
+        {events && (
+          <form method="post" action={`${API_BASE}/api/calendar/disconnect`}>
+            <button className="ghost small" style={{ marginLeft: 8 }}>
+              Disconnect
+            </button>
+          </form>
+        )}
+      </div>
+
+      {loading && <p className="muted">Loading…</p>}
+      {err && <p className="err-text tiny">{err}</p>}
+
+      {Array.isArray(events) && events.length > 0 && (
+        <ul className="list" style={{ marginTop: 10 }}>
+          {events.map((ev) => (
+            <li key={ev.id} className="list-item">
+              <div>
+                <strong>{ev.summary || "(No title)"}</strong>
+                <div className="tiny muted">
+                  {ev.start?.dateTime || ev.start?.date} → {ev.end?.dateTime || ev.end?.date}
+                </div>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+      {Array.isArray(events) && events.length === 0 && <p className="muted">No upcoming events.</p>}
+    </div>
+  );
+}
+
+// =================== APP (combined auth) ===================
 export default function App() {
-  const [email, setEmail] = useState("");
+  // pull saved auth from LS but we also support real backend auth now
+  const savedAuth = load(LS.AUTH, { authed: false, email: "" });
+
+  const [email, setEmail] = useState(savedAuth.email || "");
   const [pwd, setPwd] = useState("");
   const [showPwd, setShowPwd] = useState(false);
+  const [authed, setAuthed] = useState(!!savedAuth.authed);
+  const [profile, setProfile] = useState(
+    load(LS.PROFILE, { name: "", major: "", bio: "" })
+  );
 
-  const [authed, setAuthed] = useState(false);
+  const [onboarded, setOnboarded] = useState(load(LS.ONBOARDED, false));
+  useEffect(() => {
+    save(LS.ONBOARDED, onboarded);
+  }, [onboarded]);
+
+  const [showOnboarding, setShowOnboarding] = useState(false);
+
+  // extra state from first file (signup mode + classes + availability)
+  const [isSignUp, setIsSignUp] = useState(false);
+  const [classes, setClasses] = useState("");
+  const [availability, setAvailability] = useState("");
+
+  useEffect(() => {
+    if (authed && !onboarded) {
+      setShowOnboarding(true);
+    }
+  }, [authed, onboarded]);
+
+  useEffect(() => {
+    save(LS.AUTH, { authed, email });
+  }, [authed, email]);
+
+  useEffect(() => {
+    save(LS.PROFILE, profile);
+  }, [profile]);
 
   const isWFU = /@wfu\.edu$/i.test(email.trim());
   const canSubmit = isWFU && pwd.length >= 6;
-  const [classes, setClasses] = useState("");
-  
-  const [availability, setAvailability] = useState("");
-  const [isSignUp, setIsSignUp] = useState(false);
 
   async function onSubmit(e) {
     e.preventDefault();
 
+    // sign up (real endpoint)
     if (isSignUp) {
-      // Create new user
       const userData = {
         email,
         password: pwd,
-        classes: classes.split(",").map(c => c.trim()),
-        availability: availability.split(",").map(slot => {
-          const [day, timeRange] = slot.trim().split(" ");
-          const [start, end] = timeRange.split("-");
-          return { day, start, end };
-        }),
+        classes: classes
+          ? classes.split(",").map((c) => c.trim())
+          : [],
+        availability: availability
+          ? availability.split(",").map((slot) => {
+              // "Mon 15:00-16:00"
+              const [day, timeRange] = slot.trim().split(" ");
+              if (!day || !timeRange) return null;
+              const [start, end] = timeRange.split("-");
+              return { day, start, end };
+            }).filter(Boolean)
+          : [],
       };
 
-      const res = await fetch("http://localhost:5000/api/users", {
+      const res = await fetch(`${API_BASE}/api/users`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(userData),
       });
 
+      const data = await res.json();
+
       if (res.ok) {
         alert("Account created! You can now sign in.");
         setIsSignUp(false);
       } else {
-        const data = await res.json();
         alert(data.error || "Error creating account");
       }
-
-    } else {
-      // Log in existing user
-      const res = await fetch("http://localhost:5000/api/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password: pwd }),
-      });
-
-      const data = await res.json();
-
-      if (res.ok) {
-        alert("Welcome back!");
-        setAuthed(true);
-      } else {
-        alert(data.error || "Login failed");
-      }
+      return;
     }
-}
 
+    // login (real endpoint)
+    const res = await fetch(`${API_BASE}/api/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password: pwd }),
+    });
+
+    const data = await res.json();
+
+    if (res.ok) {
+      alert("Welcome back!");
+      setAuthed(true);
+      // use backend user name later if you add it
+    } else {
+      alert(data.error || "Login failed");
+    }
+  }
 
   function handleSignOut() {
     setAuthed(false);
@@ -261,52 +715,82 @@ export default function App() {
           <p className="subtitle">Find teammates. Learn faster.</p>
 
           {authed && (
-          <div className="user-welcome">
-            <div className="user-line">Welcome, {email.split("@")[0]}</div>
-            {}
-            <button className="ghost small signout" onClick={handleSignOut}>
-              Sign out
-            </button>
-          </div>
-        )}
-
+            <div className="user-welcome">
+              <div className="user-line">
+                Welcome, {profile.name || email.split("@")[0]}
+              </div>
+              <button className="ghost small signout" onClick={handleSignOut}>
+                Sign out
+              </button>
+            </div>
+          )}
         </div>
       </header>
 
+      {authed && showOnboarding && (
+        <OnboardingModal
+          initial={profile}
+          onSave={(data) => {
+            setProfile(data);
+            setOnboarded(true);
+            setShowOnboarding(false);
+          }}
+          onClose={() => setShowOnboarding(false)}
+        />
+      )}
 
       {!authed ? (
         <section className="content">
           <form className="card form" onSubmit={onSubmit} noValidate>
             <h2>{isSignUp ? "Create Account" : "Sign In"}</h2>
 
+            <div className="disclaimer">
+              <strong>Required: WFU email</strong>
+              <span className="muted"> (example@wfu.edu)</span>
+            </div>
+
             <label className="field">
               <span className="label">Email</span>
               <input
                 type="email"
+                inputMode="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
+                className={!email ? "" : isWFU ? "ok" : "err"}
               />
+              {!email ? null : isWFU ? (
+                <span className="help ok-text">WFU email looks good.</span>
+              ) : (
+                <span className="help err-text">Use your @wfu.edu address.</span>
+              )}
             </label>
 
             <label className="field">
               <span className="label">Password</span>
-              <input
-                type={showPwd ? "text" : "password"}
-                value={pwd}
-                onChange={(e) => setPwd(e.target.value)}
-                required
-              />
-              <button
-                type="button"
-                className="ghost small"
-                onClick={() => setShowPwd((v) => !v)}
-              >
-                {showPwd ? "Hide" : "Show"}
-              </button>
+              <div className="password-row">
+                <input
+                  type={showPwd ? "text" : "password"}
+                  value={pwd}
+                  onChange={(e) => setPwd(e.target.value)}
+                  minLength={6}
+                  required
+                />
+                <button
+                  type="button"
+                  className="ghost"
+                  onClick={() => setShowPwd((v) => !v)}
+                  aria-pressed={showPwd}
+                >
+                  {showPwd ? "Hide" : "Show"}
+                </button>
+              </div>
+              {pwd && pwd.length < 6 ? (
+                <span className="help err-text">At least 6 characters.</span>
+              ) : null}
             </label>
 
-            {/* If signing up, show extra fields */}
+            {/* sign-up-only fields from the first file */}
             {isSignUp && (
               <>
                 <label className="field">
@@ -320,7 +804,9 @@ export default function App() {
                 </label>
 
                 <label className="field">
-                  <span className="label">Availability (e.g., Mon 15:00-16:00)</span>
+                  <span className="label">
+                    Availability (e.g., Mon 15:00-16:00)
+                  </span>
                   <input
                     type="text"
                     value={availability}
@@ -331,7 +817,7 @@ export default function App() {
               </>
             )}
 
-            <button className="primary" type="submit">
+            <button className="primary" type="submit" disabled={!canSubmit}>
               {isSignUp ? "Sign Up" : "Sign In"}
             </button>
 
@@ -340,16 +826,20 @@ export default function App() {
               <button
                 type="button"
                 className="link"
-                onClick={() => setIsSignUp(!isSignUp)}
+                onClick={() => setIsSignUp((v) => !v)}
               >
                 {isSignUp ? "Sign In" : "Create Account"}
               </button>
             </p>
           </form>
         </section>
-
       ) : (
-        <Dashboard userEmail={email} onSignOut={handleSignOut} />
+        <Dashboard
+          userEmail={email}
+          onSignOut={handleSignOut}
+          profile={profile}
+          setProfile={setProfile}
+        />
       )}
 
       <footer className="footer">© {new Date().getFullYear()} Study Buddy</footer>
