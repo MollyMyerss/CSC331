@@ -1,5 +1,3 @@
-// src/App.jsx (combined)
-
 import { useState, useRef, useEffect } from "react";
 
 const API_BASE = "http://localhost:5050";
@@ -26,7 +24,6 @@ const save = (k, v) => {
   } catch {}
 };
 
-// shared hook
 function useOnClickOutside(ref, handler) {
   useEffect(() => {
     function onClick(e) {
@@ -38,7 +35,6 @@ function useOnClickOutside(ref, handler) {
   }, [ref, handler]);
 }
 
-// =================== DASHBOARD ===================
 function Dashboard({ userEmail, onSignOut, profile, setProfile }) {
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(load(LS.TAB, "Home"));
@@ -113,7 +109,6 @@ function Dashboard({ userEmail, onSignOut, profile, setProfile }) {
   );
 }
 
-// from both versions – kept
 function HomeCards() {
   return (
     <div className="dash-cards">
@@ -129,7 +124,7 @@ function HomeCards() {
         <h3>Today</h3>
         <p>No sessions yet. Create one or join a group.</p>
         <p className="tiny muted">
-          Tip: Use Groups → “Find group” to browse open study groups.
+          Tip: Use Groups to see the classes you have joined → create study sessions on the Calendar page.
         </p>
       </div>
       <div className="card">
@@ -391,35 +386,96 @@ function CalendarView() {
   );
 }
 
-// from both
 function GroupsView() {
+  const [groups, setGroups] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState("");
+
+  useEffect(() => {
+    async function loadGroups() {
+      setLoading(true);
+      setErr("");
+
+      try {
+        const res = await fetch(`${API_BASE}/api/groups`);
+        if (!res.ok) {
+          throw new Error("Failed to load groups");
+        }
+        const data = await res.json();
+        setGroups(data.groups || []);
+      } catch (e) {
+        console.error(e);
+        setErr("Could not load groups. Please try again.");
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    loadGroups();
+  }, []);
+
+  function startSession(group) {
+    // For now, just a placeholder – easy to hook into Calendar later.
+    alert(`Starting a study session for ${group.className}!`);
+    console.log("Start session with group:", group);
+  }
+
   return (
     <div className="section">
       <h3>Groups</h3>
-      <p className="muted">Join or create study groups by class.</p>
+      <p className="muted">
+        Classes and peers list
+      </p>
+
+      {loading && <p className="tiny muted">Loading groups…</p>}
+      {err && <p className="tiny err-text">{err}</p>}
+
+      {!loading && !err && groups.length === 0 && (
+        <p className="muted">
+          No groups yet. Sign up and add your classes to see groups appear.
+        </p>
+      )}
+
       <div className="list">
-        <div className="list-item">
-          <div>
-            <strong>BEM 329 – Sports Marketing</strong>
-            <div className="tiny muted">Meets Thu 7–8 pm • 3 members</div>
+        {groups.map((g) => (
+          <div key={g.className} className="list-item">
+            <div>
+              <strong>{g.className}</strong>
+              <div className="tiny muted">
+                {g.members.length} member{g.members.length === 1 ? "" : "s"}
+              </div>
+
+              {/* member list */}
+              {g.members.length > 0 && (
+                <ul className="tiny" style={{ marginTop: 4 }}>
+                  {g.members.map((m) => (
+                    <li key={m.email}>
+                      {m.email}
+                      {Array.isArray(m.availability) &&
+                        m.availability.length > 0 && (
+                          <span className="muted">
+                            {" "}
+                            •{" "}
+                            {m.availability
+                              .map(
+                                (a) =>
+                                  `${a.day} ${a.start}-${a.end}`
+                              )
+                              .join(", ")}
+                          </span>
+                        )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
           </div>
-          <button className="ghost small">View</button>
-        </div>
-        <div className="list-item">
-          <div>
-            <strong>MTH 121 – Linear Algebra</strong>
-            <div className="tiny muted">Meets Sun 3–4 pm • 5 members</div>
-          </div>
-          <button className="ghost small">Join</button>
-        </div>
-      </div>
-      <div className="row">
-        <button className="primary">Create Group</button>
-        <button className="ghost">Find Group</button>
+        ))}
       </div>
     </div>
   );
 }
+
 
 function NotificationsView() {
   return (
@@ -454,7 +510,6 @@ function MessagesView() {
   );
 }
 
-// =================== ONBOARDING ===================
 function OnboardingModal({ initial = { name: "", major: "", bio: "" }, onSave, onClose }) {
   const [draft, setDraft] = useState(initial);
   const [err, setErr] = useState("");
@@ -531,7 +586,6 @@ function OnboardingModal({ initial = { name: "", major: "", bio: "" }, onSave, o
   );
 }
 
-// =================== CALENDAR CONNECT CARD ===================
 function CalendarConnect() {
   const [events, setEvents] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -603,9 +657,7 @@ function CalendarConnect() {
   );
 }
 
-// =================== APP (combined auth) ===================
 export default function App() {
-  // pull saved auth from LS but we also support real backend auth now
   const savedAuth = load(LS.AUTH, { authed: false, email: "" });
 
   const [email, setEmail] = useState(savedAuth.email || "");
@@ -623,7 +675,6 @@ export default function App() {
 
   const [showOnboarding, setShowOnboarding] = useState(false);
 
-  // extra state from first file (signup mode + classes + availability)
   const [isSignUp, setIsSignUp] = useState(false);
   const [classes, setClasses] = useState("");
   const [availability, setAvailability] = useState("");
@@ -648,7 +699,6 @@ export default function App() {
   async function onSubmit(e) {
     e.preventDefault();
 
-    // sign up (real endpoint)
     if (isSignUp) {
       const userData = {
         email,
@@ -658,7 +708,6 @@ export default function App() {
           : [],
         availability: availability
           ? availability.split(",").map((slot) => {
-              // "Mon 15:00-16:00"
               const [day, timeRange] = slot.trim().split(" ");
               if (!day || !timeRange) return null;
               const [start, end] = timeRange.split("-");
@@ -684,7 +733,6 @@ export default function App() {
       return;
     }
 
-    // login (real endpoint)
     const res = await fetch(`${API_BASE}/api/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -696,7 +744,6 @@ export default function App() {
     if (res.ok) {
       alert("Welcome back!");
       setAuthed(true);
-      // use backend user name later if you add it
     } else {
       alert(data.error || "Login failed");
     }
