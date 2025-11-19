@@ -1,5 +1,3 @@
-// backend/src/server.js
-
 import dotenv from "dotenv";
 import fs from "fs";
 import path from "node:path";
@@ -9,9 +7,7 @@ import cors from "cors";
 import cookieSession from "cookie-session";
 import { google } from "googleapis";
 
-// ----------------------------------------------------
 // setup env + __dirname
-// ----------------------------------------------------
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.join(__dirname, "../.env") });
@@ -19,7 +15,7 @@ dotenv.config({ path: path.join(__dirname, "../.env") });
 
 const SCOPES = ["https://www.googleapis.com/auth/calendar"];
 
-const dbPath = path.resolve(__dirname, "backend/src/db.json");
+const dbPath = path.resolve(__dirname, "/Users/mollymyers/CSC331/backend/src/db.json");
 
 
 function readDB() {
@@ -47,7 +43,7 @@ app.use(
     keys: [process.env.SESSION_SECRET || "dev-secret"],
     httpOnly: true,
     sameSite: "lax",
-    secure: false, // set to true in prod with HTTPS
+    secure: false, 
   })
 );
 
@@ -57,18 +53,14 @@ const oauth2Client = new google.auth.OAuth2(
   process.env.GOOGLE_REDIRECT
 );
 
-// ----------------------------------------------------
+
 // basic routes
-// ----------------------------------------------------
 app.get("/", (_req, res) => {
   res.send("Study Buddy API is running. Try /api/health");
 });
 
 app.get("/api/health", (_req, res) => res.json({ ok: true }));
 
-// ----------------------------------------------------
-// db.json-backed routes (from your first file)
-// ----------------------------------------------------
 
 // get all users
 app.get("/api/users", (_req, res) => {
@@ -131,9 +123,7 @@ app.post("/api/match", (req, res) => {
   res.json({ matches });
 });
 
-// ----------------------------------------------------
 // Google OAuth + Calendar routes (from your second file)
-// ----------------------------------------------------
 
 // 1) send user to Google with WRITE scope
 app.get("/auth/google", (_req, res) => {
@@ -228,11 +218,64 @@ app.post("/api/calendar/events", async (req, res) => {
   }
 });
 
-// 5) disconnect
 app.post("/api/calendar/disconnect", (req, res) => {
   req.session = null;
   res.json({ ok: true });
 });
+
+// 🔹 NEW: class-based groups (buckets)
+app.get("/api/groups", (req, res) => {
+  const db = readDB();
+  const emailFilter = req.query.email;
+
+  const buckets = new Map();
+
+  for (const user of db.users) {
+    // handle both string "MTH121,BEM329" and ["MTH121","BEM329"]
+    let classes = [];
+
+    if (Array.isArray(user.classes)) {
+      classes = user.classes;
+    } else if (typeof user.classes === "string") {
+      classes = user.classes
+        .split(",")
+        .map((c) => c.trim())
+        .filter(Boolean);
+    }
+
+    for (const raw of classes) {
+      const cls = typeof raw === "string" ? raw.trim() : "";
+      if (!cls) continue;
+
+      if (!buckets.has(cls)) {
+        buckets.set(cls, {
+          className: cls,
+          members: [],
+        });
+      }
+
+      const bucket = buckets.get(cls);
+      bucket.members.push({
+        email: user.email,
+        availability: Array.isArray(user.availability)
+          ? user.availability
+          : [],
+      });
+    }
+  }
+
+  let groups = Array.from(buckets.values());
+
+  // optional filter: only groups this email belongs to
+  if (emailFilter) {
+    groups = groups.filter((g) =>
+      g.members.some((m) => m.email === emailFilter)
+    );
+  }
+
+  res.json({ groups });
+});
+
 
 // 6) debug
 app.get("/api/debug/session", (req, res) => {
@@ -244,8 +287,6 @@ app.get("/api/debug/session", (req, res) => {
   });
 });
 
-// ----------------------------------------------------
 // start server
-// ----------------------------------------------------
 const PORT = process.env.PORT || 5050;
 app.listen(PORT, () => console.log(`API → http://localhost:${PORT}`));
